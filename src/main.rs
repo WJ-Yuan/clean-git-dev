@@ -1,44 +1,52 @@
+use inquire::{MultiSelect, Select, Confirm};
 use regex::Regex;
-use std::io::{self, Write};
-use std::process::Command;
+use std::{
+    io::{self, Write},
+    process::{self, Command},
+};
+
+fn get_delete_mode() -> String {
+    let mode: &str = loop {
+        let delete_mode_options: Vec<&str> = vec!["Select", "Keyword", "Regex"];
+        let delete_mode =
+            Select::new("Firstly, please select delete mode: ", delete_mode_options).prompt();
+        match delete_mode {
+            Ok(result) => break result,
+            Err(_) => continue,
+        };
+    };
+
+    mode.to_string()
+}
 
 fn main() {
-    let mut input = String::new();
-
-    println!("Welcome To Clean Git Dev");
-    println!("Firstly, select delete mode (Enter the mode number):");
-    println!("1. Interactive");
-    println!("2. Keyword");
-    println!("3. Regex");
-
-    io::stdin()
-        .read_line(&mut input)
-        .expect("Failed to read mode");
-    let mode = input.trim().parse::<u32>().expect("Invalid mode input");
+    let delete_mode: String = get_delete_mode();
+    println!("Your choice: {} mode", &delete_mode);
+    let mode = &delete_mode[..];
 
     match mode {
-        1 => interactive_delete(),
-        2 => keyword_or_regex_delete(false),
-        3 => keyword_or_regex_delete(true),
-        _ => println!("Invalid mode input"),
+        "Select" => select_delete(),
+        "Keyword" => keyword_or_regex_delete(false),
+        _ => keyword_or_regex_delete(true),
     }
 }
 
-fn interactive_delete() {
+fn select_delete() {
     println!("Fetching local branches...");
-    let branches = get_local_branches();
+    let branches: Vec<String> = get_local_branches();
 
     if branches.is_empty() {
         println!("No local branches found.");
         return;
     }
 
-    println!("Local branches:");
-    for (index, branch) in branches.iter().enumerate() {
-        println!("{}. {}", index + 1, branch);
-    }
-
-    let branches_to_delete = get_user_selection(&branches);
+    let branches_to_delete = match MultiSelect::new("Local branches:", branches).prompt() {
+        Ok(list) => list,
+        Err(e) => {
+            eprintln!("select error, {e}");
+            process::exit(1);
+        }
+    };
 
     if branches_to_delete.is_empty() {
         println!("No branches selected for deletion.");
@@ -66,6 +74,10 @@ fn keyword_or_regex_delete(use_regex: bool) {
         .read_line(&mut input)
         .expect("Failed to read line");
     let pattern = input.trim();
+
+    if pattern.is_empty() {
+        return;
+    }
 
     // Get all local branches
     let branches = get_local_branches();
@@ -117,29 +129,6 @@ fn get_local_branches() -> Vec<String> {
         .collect()
 }
 
-fn get_user_selection(branches: &[String]) -> Vec<String> {
-    let mut input = String::new();
-
-    print!("Enter branch numbers to delete (comma-separated): ");
-    io::stdout().flush().unwrap();
-    io::stdin()
-        .read_line(&mut input)
-        .expect("Failed to read line");
-
-    let selected_indices: Vec<usize> = input
-        .trim()
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect();
-
-    let selected_branches: Vec<String> = selected_indices
-        .iter()
-        .filter_map(|&index| branches.get(index - 1).cloned())
-        .collect();
-
-    selected_branches
-}
-
 fn delete_branches(branches: &[String]) {
     for branch in branches {
         let delete_command = if cfg!(windows) {
@@ -179,18 +168,13 @@ fn delete_branches(branches: &[String]) {
 }
 
 fn ask_user_for_confirmation(prompt: &str) -> bool {
-    print!("{} (y/n): ", prompt);
-    io::stdout().flush().unwrap();
-
-    let mut input = String::new();
-    io::stdin()
-        .read_line(&mut input)
-        .expect("Failed to read line");
-
-    input.trim().eq_ignore_ascii_case("y")
+    match Confirm::new(prompt).with_default(false).prompt() {
+        Ok(result) => result,
+        _ => false
+    }
 }
 
 fn exit_program() {
     println!("Exiting Clean Git Dev. Goodbye!");
-    std::process::exit(0);
+    process::exit(0);
 }
